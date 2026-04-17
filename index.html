@@ -3,242 +3,137 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Greedy Packer (Centered + Labels)</title>
+    <title>PDF Packer</title>
     <style>
         body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background-color: #1e1e1e;
-            color: #ececec;
+            font-family: system-ui, sans-serif;
             padding: 2rem;
-            max-width: 800px;
+            max-width: 600px;
             margin: 0 auto;
         }
-        .controls {
-            background: #2d2d2d;
-            padding: 1.5rem;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-            margin-bottom: 1rem;
-        }
+        h1 { font-size: 1.5rem; }
+        p { color: #666; }
         input[type="file"] {
-            margin-top: 1rem;
-            padding: 0.5rem;
-            background: #3d3d3d;
-            border: 1px solid #555;
-            border-radius: 4px;
-            color: white;
-            cursor: pointer;
-            width: 100%;
-            box-sizing: border-box;
+            display: block;
+            margin: 1rem 0;
         }
-        #log {
-            background: #111;
-            padding: 1rem;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 0.9rem;
-            color: #4af626;
-            height: 300px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-        }
-        .error { color: #ff5252; }
-        .success { color: #52e3ff; }
-        #download-btn {
+        #status { color: #666; margin: 1rem 0; }
+        #download {
             display: none;
-            margin-top: 1rem;
-            padding: 10px 20px;
-            background: #4af626;
-            color: #000;
-            text-decoration: none;
-            font-weight: bold;
-            border-radius: 4px;
-            text-align: center;
+            color: #0066cc;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 </head>
 <body>
-
-    <div class="controls">
-        <h2>PDF Bbox Trimmer & Packer</h2>
-        <p>Upload PDFs. Rasterized at 300 DPI, trimmed, horizontally centered, labeled with filenames, and packed onto A4 portrait pages with a 3mm bleed.</p>
-        <input type="file" id="pdf-upload" accept="application/pdf" multiple>
-        <a id="download-btn" href="#">Download Packed PDF</a>
-    </div>
-
-    <div id="log">Awaiting files...</div>
+    <h1>PDF Packer</h1>
+    <p>Packs PDF pages onto A4, trimmed and labeled.</p>
+    <input type="file" id="upload" accept="application/pdf" multiple>
+    <div id="status"></div>
+    <a id="download" href="#">Download PDF</a>
 
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        const A4_WIDTH = 595.28;
-        const A4_HEIGHT = 841.89;
-        const BLEED_PT = 8.5039; // 3mm in PDF points
-        const DPI = 300;
-        const SCALE = DPI / 72;
-        
-        // Font settings
-        const FONT_SIZE = 10;
-        const TEXT_GAP = 5; // Space between image and text
+        const A4_WIDTH = 595.28, A4_HEIGHT = 841.89;
+        const BLEED_PT = 8.5039, DPI = 300, SCALE = DPI / 72;
+        const FONT_SIZE = 10, TEXT_GAP = 5;
 
-        const uploadInput = document.getElementById('pdf-upload');
-        const logEl = document.getElementById('log');
-        const downloadBtn = document.getElementById('download-btn');
-
+        const upload = document.getElementById('upload');
+        const status = document.getElementById('status');
+        const downloadLink = document.getElementById('download');
         const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
 
-        function log(msg, type = '') {
-            const span = document.createElement('span');
-            span.textContent = msg + '\n';
-            if (type) span.className = type;
-            logEl.appendChild(span);
-            logEl.scrollTop = logEl.scrollHeight;
-        }
-
-uploadInput.addEventListener('change', async (e) => {
+        upload.addEventListener('change', async (e) => {
             const files = Array.from(e.target.files);
             if (!files.length) return;
 
-            // Lock UI to prevent double-clicks during processing
-            uploadInput.disabled = true;
-            logEl.innerHTML = '';
-            downloadBtn.style.display = 'none';
-            log(`Starting batch job: ${files.length} file(s)...`);
+            status.textContent = `Processing ${files.length} file(s)...`;
+            downloadLink.style.display = 'none';
 
             try {
                 const outPdf = await PDFLib.PDFDocument.create();
                 const font = await outPdf.embedFont(PDFLib.StandardFonts.Courier);
-                
                 let currentPage = outPdf.addPage([A4_WIDTH, A4_HEIGHT]);
                 let currentY = A4_HEIGHT;
 
-                for (let fIndex = 0; fIndex < files.length; fIndex++) {
-                    const file = files[fIndex];
-                    log(`\n--- Reading [${file.name}] ---`);
-                    
+                for (const file of files) {
                     const arrayBuffer = await file.arrayBuffer();
                     const pdfJsDoc = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
                     const pdfLibDoc = await PDFLib.PDFDocument.load(arrayBuffer.slice(0));
 
-                    for (let pageNum = 1; pageNum <= pdfJsDoc.numPages; pageNum++) {
-                        log(`Rasterizing page ${pageNum}/${pdfJsDoc.numPages} at 300 DPI...`);
-                        
-                        const page = await pdfJsDoc.getPage(pageNum);
+                    for (let i = 1; i <= pdfJsDoc.numPages; i++) {
+                        const page = await pdfJsDoc.getPage(i);
                         const viewport = page.getViewport({ scale: SCALE });
 
                         canvas.width = viewport.width;
                         canvas.height = viewport.height;
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
                         await page.render({ canvasContext: ctx, viewport }).promise;
 
                         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-                        let minX = canvas.width, minY = canvas.height, maxX = 0, maxY = 0;
-                        let hasContent = false;
+                        let minX = canvas.width, minY = canvas.height, maxX = 0, maxY = 0, hasContent = false;
 
                         for (let y = 0; y < canvas.height; y++) {
                             for (let x = 0; x < canvas.width; x++) {
-                                const i = (y * canvas.width + x) * 4;
-                                if (imgData[i + 3] > 10 && (imgData[i] < 250 || imgData[i+1] < 250 || imgData[i+2] < 250)) {
+                                const idx = (y * canvas.width + x) * 4;
+                                if (imgData[idx + 3] > 10 && (imgData[idx] < 250 || imgData[idx + 1] < 250 || imgData[idx + 2] < 250)) {
                                     hasContent = true;
-                                    if (x < minX) minX = x;
-                                    if (x > maxX) maxX = x;
-                                    if (y < minY) minY = y;
-                                    if (y > maxY) maxY = y;
+                                    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+                                    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
                                 }
                             }
                         }
 
-                        if (!hasContent) {
-                            log(`Page ${pageNum} is blank. Skipping.`);
-                            page.cleanup(); // Clean up page memory
-                            continue;
-                        }
+                        if (!hasContent) { page.cleanup(); continue; }
 
-                        const pdfPageHeight = viewport.height / SCALE;
-                        const left = minX / SCALE;
-                        const right = maxX / SCALE;
-                        const top = pdfPageHeight - (minY / SCALE);
-                        const bottom = pdfPageHeight - (maxY / SCALE);
+                        const pageHeight = viewport.height / SCALE;
+                        const left = minX / SCALE, right = maxX / SCALE;
+                        const top = pageHeight - minY / SCALE, bottom = pageHeight - maxY / SCALE;
+                        const width = right - left, height = top - bottom;
+                        const totalH = height + TEXT_GAP + FONT_SIZE + BLEED_PT * 2;
 
-                        const contentWidth = right - left;
-                        const contentHeight = top - bottom;
-                        
-                        const effectiveContentHeight = contentHeight + TEXT_GAP + FONT_SIZE;
-                        const totalItemWidth = contentWidth + (BLEED_PT * 2);
-                        const totalItemHeight = effectiveContentHeight + (BLEED_PT * 2);
-
-                        if (totalItemWidth > A4_WIDTH || totalItemHeight > A4_HEIGHT) {
-                            throw new Error(`BBox on ${file.name} (page ${pageNum}) exceeds A4 dimensions!`);
-                        }
-
-                        if (currentY - totalItemHeight < 0) {
-                            log(`Item exceeds remaining vertical space. Generating new A4...`);
+                        if (totalH > currentY) {
                             currentPage = outPdf.addPage([A4_WIDTH, A4_HEIGHT]);
                             currentY = A4_HEIGHT;
                         }
 
-                        const sourcePage = pdfLibDoc.getPages()[pageNum - 1];
-                        const embeddedPage = await outPdf.embedPage(sourcePage, { left, right, bottom, top });
+                        const embeddedPage = await outPdf.embedPage(pdfLibDoc.getPages()[i - 1], { left, right, bottom, top });
+                        const drawX = (A4_WIDTH - width) / 2;
+                        const drawY = currentY - BLEED_PT - height;
 
-                        const drawX = (A4_WIDTH - contentWidth) / 2;
-                        const drawY = currentY - BLEED_PT - contentHeight;
+                        currentPage.drawPage(embeddedPage, { x: drawX, y: drawY, width, height });
 
-                        currentPage.drawPage(embeddedPage, {
-                            x: drawX,
-                            y: drawY,
-                            width: contentWidth,
-                            height: contentHeight
+                        let label = file.name.replace(/[^\x20-\x7E]/g, '');
+                        if (!label) label = 'unnamed';
+                        if (label.length > 50) label = label.substring(0, 47) + '...';
+                        if (pdfJsDoc.numPages > 1) label += ` (Pg ${i})`;
+
+                        const textWidth = font.widthOfTextAtSize(label, FONT_SIZE);
+                        currentPage.drawText(label, {
+                            x: (A4_WIDTH - textWidth) / 2,
+                            y: drawY - TEXT_GAP - FONT_SIZE + 2,
+                            size: FONT_SIZE, font, color: PDFLib.rgb(0, 0, 0)
                         });
 
-                        // --- FIX: Sanitize and truncate filename for WinAnsi font ---
-                        let safeName = file.name.replace(/[^\x20-\x7E]/g, ''); // Keep only standard printable ASCII
-                        if (safeName.length === 0) safeName = 'unnamed_file';
-                        if (safeName.length > 50) safeName = safeName.substring(0, 47) + '...';
-
-                        const labelText = pdfJsDoc.numPages > 1 ? `${safeName} (Pg ${pageNum})` : safeName;
-                        const textWidth = font.widthOfTextAtSize(labelText, FONT_SIZE);
-                        const textX = (A4_WIDTH - textWidth) / 2;
-                        const textY = drawY - TEXT_GAP - FONT_SIZE + 2;
-
-                        currentPage.drawText(labelText, {
-                            x: textX,
-                            y: textY,
-                            size: FONT_SIZE,
-                            font: font,
-                            color: PDFLib.rgb(0, 0, 0)
-                        });
-
-                        currentY -= totalItemHeight;
-                        log(`Successfully packed. Remaining vertical space: ${currentY.toFixed(1)} pts`);
-                        
-                        // Clean up individual page view from memory
-                        page.cleanup(); 
+                        currentY -= totalH;
+                        page.cleanup();
                     }
-                    
-                    // --- FIX: Purge the document from the web worker memory ---
-                    await pdfJsDoc.destroy(); 
+                    await pdfJsDoc.destroy();
                 }
 
-                log('\nFinalizing master PDF...', 'success');
                 const pdfBytes = await outPdf.save();
                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                const url = URL.createObjectURL(blob);
-                
-                downloadBtn.href = url;
-                downloadBtn.download = `packed_stack_${Date.now()}.pdf`;
-                downloadBtn.style.display = 'inline-block';
-                log('Complete! Ready for download.', 'success');
+                downloadLink.href = URL.createObjectURL(blob);
+                downloadLink.download = 'packed.pdf';
+                downloadLink.style.display = 'inline';
+                status.textContent = 'Done!';
 
             } catch (err) {
                 console.error(err);
-                log(`\nFATAL ERROR: ${err.message}`, 'error');
-            } finally {
-                // Unlock UI
-                uploadInput.disabled = false;
+                status.textContent = `Error: ${err.message}`;
             }
         });
     </script>
