@@ -47,6 +47,12 @@
             margin-top: 1.5rem;
             display: none;
         }
+        #upload {
+            display: block;
+        }
+        #upload.hidden {
+            display: none;
+        }
         #preview h2 {
             font-size: 1.1rem;
             margin: 0 0 1rem;
@@ -225,6 +231,7 @@
 
             renderFileList();
             preview.style.display = 'block';
+            upload.classList.add('hidden');
             status.textContent = '';
             upload.value = '';
         }
@@ -256,6 +263,7 @@
         cancelBtn.addEventListener('click', () => {
             fileStates.length = 0;
             preview.style.display = 'none';
+            upload.classList.remove('hidden');
             upload.value = '';
         });
 
