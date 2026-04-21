@@ -102,10 +102,12 @@
             font-size: 0.9rem;
             cursor: pointer;
             margin-bottom: 1rem;
+            transition: border-color 0.15s, background 0.15s, color 0.15s;
         }
-        #addMore:hover {
-            border-color: #999;
-            color: #333;
+        #addMore:hover, #addMore.drag-over {
+            border-color: #0066cc;
+            background: rgba(0, 102, 204, 0.05);
+            color: #0066cc;
         }
         #actions {
             display: flex;
@@ -258,6 +260,28 @@
 
         addMoreBtn.addEventListener('click', () => {
             upload.click();
+        });
+
+        // Drag and drop on "Add More" button
+        addMoreBtn.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            addMoreBtn.classList.add('drag-over');
+        });
+
+        addMoreBtn.addEventListener('dragleave', () => {
+            addMoreBtn.classList.remove('drag-over');
+        });
+
+        addMoreBtn.addEventListener('drop', (e) => {
+            e.preventDefault();
+            addMoreBtn.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length) {
+                const dt = new DataTransfer();
+                for (const f of files) dt.items.add(f);
+                upload.files = dt.files;
+                upload.dispatchEvent(new Event('change'));
+            }
         });
 
         cancelBtn.addEventListener('click', () => {
