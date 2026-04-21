@@ -302,6 +302,28 @@
                 const font = await outPdf.embedFont(PDFLib.StandardFonts.Courier);
                 let currentPage = outPdf.addPage([A4_WIDTH, A4_HEIGHT]);
                 let currentY = A4_HEIGHT;
+                let currentPageItems = [];
+
+                const redistributeItems = (page, items) => {
+                    if (items.length === 0) return;
+                    const totalItemHeights = items.reduce((sum, item) => sum + item.height, 0);
+                    const spacing = Math.max((A4_HEIGHT - totalItemHeights) / (items.length + 1), BLEED_PT);
+
+                    let y = spacing;
+                    for (const item of items) {
+                        const drawX = (A4_WIDTH - item.width) / 2;
+                        page.drawPage(item.embeddedPage, { x: drawX, y, width: item.width, height: item.height });
+
+                        const textWidth = font.widthOfTextAtSize(item.label, FONT_SIZE);
+                        page.drawText(item.label, {
+                            x: (A4_WIDTH - textWidth) / 2,
+                            y: y - TEXT_GAP - FONT_SIZE + 2,
+                            size: FONT_SIZE, font, color: PDFLib.rgb(0, 0, 0)
+                        });
+
+                        y += item.height + spacing;
+                    }
+                };
 
                 for (const state of fileStates) {
                     const arrayBuffer = await state.file.arrayBuffer();
@@ -337,46 +359,43 @@
                         const left = minX / SCALE, right = maxX / SCALE;
                         const top = pageHeight - minY / SCALE, bottom = pageHeight - maxY / SCALE;
                         const width = right - left, height = top - bottom;
-                        const totalH = height + TEXT_GAP + FONT_SIZE + BLEED_PT * 2;
+                        const totalH = height + TEXT_GAP + FONT_SIZE;
 
                         if (totalH > currentY) {
+                            redistributeItems(currentPage, currentPageItems);
                             currentPage = outPdf.addPage([A4_WIDTH, A4_HEIGHT]);
                             currentY = A4_HEIGHT;
+                            currentPageItems = [];
                         }
 
-                        const embeddedPage = await outPdf.embedPage(pdfLibDoc.getPages()[i - 1], { left, right, bottom, top });
-                        const drawX = (A4_WIDTH - width) / 2;
-                        const drawY = currentY - BLEED_PT - height;
-
-                        currentPage.drawPage(embeddedPage, { x: drawX, y: drawY, width, height });
+                        const [copiedPage] = pdfLibDoc.copyPages(pdfLibDoc.getPages(), [i - 1]);
+                        const embeddedPage = await outPdf.embedPage(copiedPage, { left, right, bottom, top });
 
                         let label = state.label.replace(/[^\x20-\x7E]/g, '');
                         if (!label) label = 'unnamed';
                         if (label.length > 50) label = label.substring(0, 47) + '...';
                         if (pdfJsDoc.numPages > 1) label += ` (Pg ${i})`;
 
-                        const textWidth = font.widthOfTextAtSize(label, FONT_SIZE);
-                        currentPage.drawText(label, {
-                            x: (A4_WIDTH - textWidth) / 2,
-                            y: drawY - TEXT_GAP - FONT_SIZE + 2,
-                            size: FONT_SIZE, font, color: PDFLib.rgb(0, 0, 0)
-                        });
-
+                        currentPageItems.push({ embeddedPage, width, height, label });
                         currentY -= totalH;
                         page.cleanup();
                     }
                     await pdfJsDoc.destroy();
                 }
 
+                if (currentPageItems.length > 0) {
+                    redistributeItems(currentPage, currentPageItems);
+                }
+
                 const pdfBytes = await outPdf.save();
                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                 const url = URL.createObjectURL(blob);
-                
+
                 downloadLink.href = url;
                 downloadLink.download = 'packed.pdf';
                 downloadLink.style.display = 'inline';
                 status.textContent = 'Done!';
-                
+
                 window.open(url, '_blank');
 
             } catch (err) {
