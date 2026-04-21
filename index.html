@@ -368,7 +368,7 @@
                             currentPageItems = [];
                         }
 
-                        const [copiedPage] = pdfLibDoc.copyPages(pdfLibDoc.getPages(), [i - 1]);
+                        const copiedPage = pdfLibDoc.copyPages(pdfLibDoc.getPages(), [i - 1])[0];
                         const embeddedPage = await outPdf.embedPage(copiedPage, { left, right, bottom, top });
 
                         let label = state.label.replace(/[^\x20-\x7E]/g, '');
